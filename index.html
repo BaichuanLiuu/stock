@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>金牛座选股器</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css" />
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header class="top-nav">
+      <div class="brand">
+        <div class="brand-mark">牛</div>
+        <div>
+          <h1>金牛座选股器</h1>
+        </div>
+      </div>
+    </header>
+    <nav class="feature-tabs">
+      <button class="tab" :class="{ active: activeFeature === 'limit' }" @click="setFeature('limit')">涨停板</button>
+      <button class="tab" :class="{ active: activeFeature === 'stock' }" @click="setFeature('stock')">股票信息</button>
+      <button class="tab" :class="{ active: activeFeature === 'monitor' }" @click="setFeature('monitor')">实时监控</button>
+      <button class="tab" :class="{ active: activeFeature === 'auction' }" @click="setFeature('auction')">竞价监控</button>
+    </nav>
+    <main class="grid">
+      <div class="column left-panel">
+        <section class="card" v-if="activeFeature === 'limit'">
+          <div class="card-title">涨停板查询</div>
+          <div class="row">
+            <div class="field-full">
+              <label for="date">日期（默认今天）</label>
+              <input id="date" type="date" v-model="date" :max="today" @change="validateDate" />
+            </div>
+          </div>
+          <button id="fetch" class="primary-btn" @click="fetchData">获取涨停板数据</button>
+          <div class="status" id="status">{{ status }}</div>
+        </section>
+        <section class="card" v-if="activeFeature === 'stock'">
+          <div class="card-title">股票信息查询</div>
+          <div class="row">
+            <div class="field-full">
+              <label for="symbol">股票代码</label>
+              <input id="symbol" type="text" v-model.trim="symbol" placeholder="例如 000001" />
+            </div>
+          </div>
+          <button class="primary-btn" @click="fetchStockInfo">查询股票信息</button>
+          <div class="status">{{ infoStatus }}</div>
+        </section>
+        <section class="card" v-if="activeFeature === 'monitor'">
+          <div class="card-title">实时监控设置</div>
+          <div class="row dense-row">
+            <div>
+              <label>监控操作</label>
+              <div class="inline-controls">
+                <button class="ghost-btn" @click="startMonitor" :disabled="monitoring">开始</button>
+                <button class="ghost-btn" @click="stopMonitor" :disabled="!monitoring">停止</button>
+              </div>
+            </div>
+            <div>
+              <label for="first-board">首板判定</label>
+              <select id="first-board" v-model="monitorFilters.firstBoardOnly">
+                <option :value="true">仅首板（连板数=1）</option>
+                <option :value="false">不限</option>
+              </select>
+            </div>
+            <div>
+              <label for="seal-time">封板时间上限</label>
+              <input id="seal-time" type="time" v-model="monitorFilters.sealTimeLimit" />
+            </div>
+            <div>
+              <label for="no-zha">必须无炸板</label>
+              <input id="no-zha" type="checkbox" v-model="monitorFilters.requireNoZha" />
+            </div>
+          </div>
+          <div class="row dense-row">
+            <div>
+              <label for="turnover-min">换手率区间（%）</label>
+              <div class="inline-controls">
+                <input id="turnover-min" type="number" min="0" step="0.1" v-model.number="monitorFilters.turnoverMin" />
+                <span class="range-sep">-</span>
+                <input id="turnover-max" type="number" min="0" step="0.1" v-model.number="monitorFilters.turnoverMax" />
+              </div>
+            </div>
+            <div>
+              <label for="volume-ratio">量能阈值（量比）</label>
+              <input id="volume-ratio" type="number" min="0" step="0.1" v-model.number="monitorFilters.volumeRatioMin" />
+            </div>
+          </div>
+          <div class="status">{{ monitorStatus }}</div>
+        </section>
+        <section class="card" v-if="activeFeature === 'auction'">
+          <div class="card-title">竞价监控（9:15-9:25）</div>
+          <div class="row dense-row">
+            <div>
+              <label>监控操作</label>
+              <div class="inline-controls">
+                <button class="ghost-btn" @click="startAuctionMonitor" :disabled="auctionMonitoring">开始</button>
+                <button class="ghost-btn" @click="stopAuctionMonitor" :disabled="!auctionMonitoring">停止</button>
+              </div>
+            </div>
+            <div>
+              <label for="auction-pct">竞价涨幅区间（%）</label>
+              <div class="inline-controls">
+                <input id="auction-pct" type="number" min="0" step="0.1" v-model.number="auctionFilters.pctMin" />
+                <span class="range-sep">-</span>
+                <input type="number" min="0" step="0.1" v-model.number="auctionFilters.pctMax" />
+              </div>
+            </div>
+            <div>
+              <label for="auction-volume">竞价量比≥</label>
+              <input id="auction-volume" type="number" min="0" step="0.1" v-model.number="auctionFilters.volumeRatioMin" />
+            </div>
+            <div>
+              <label for="auction-turnover">竞价换手率≥(%)</label>
+              <input id="auction-turnover" type="number" min="0" step="0.1" v-model.number="auctionFilters.turnoverMin" />
+            </div>
+          </div>
+          <div class="row dense-row">
+            <div>
+              <label for="auction-share">竞量占比≥(%)</label>
+              <input id="auction-share" type="number" min="0" step="0.1" v-model.number="auctionFilters.volumeShareMin" />
+            </div>
+          </div>
+          <div class="status">{{ auctionStatus }}</div>
+        </section>
+      </div>
+      <div class="column right-panel">
+        <section class="card display-card" v-if="activeFeature">
+          <div v-if="displayMode === 'empty'" class="empty-state">
+            请在左侧选择并查询要展示的信息。
+          </div>
+          <div v-else-if="displayMode === 'limit'">
+            <div class="row" style="margin-bottom: 8px; align-items: center;">
+              <span class="tag">今日涨停板</span>
+              <span class="tag">{{ list.length }} 只</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>代码</th>
+                    <th>名称</th>
+                    <th>涨停价</th>
+                    <th>涨幅</th>
+                    <th>
+                      <span class="sortable-header">
+                        连板高度
+                        <span class="sort-buttons">
+                          <button class="sort-btn" :class="{ active: heightSort === 'asc' }" @click="setHeightSort('asc')">
+                            ▲
+                          </button>
+                          <button class="sort-btn" :class="{ active: heightSort === 'desc' }" @click="setHeightSort('desc')">
+                            ▼
+                          </button>
+                        </span>
+                      </span>
+                    </th>
+                    <th>成交额</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="pagedList.length === 0">
+                    <td colspan="6" class="empty">暂无数据</td>
+                  </tr>
+                  <tr v-for="item in pagedList" :key="item.code">
+                    <td>{{ item.code || "-" }}</td>
+                    <td>{{ item.name || "-" }}</td>
+                    <td>{{ item.price || "-" }}</td>
+                    <td class="highlight">{{ formatChange(item.change) }}</td>
+                    <td>{{ item.height || "-" }}</td>
+                    <td>{{ formatTurnover(item.turnover) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination-wrapper" v-if="list.length">
+              <el-pagination
+                background
+                layout="prev, pager, next"
+                :page-size="pageSize"
+                :current-page="currentPage"
+                :total="list.length"
+                @current-change="handlePageChange"
+              ></el-pagination>
+            </div>
+          </div>
+          <div v-else-if="displayMode === 'stock'">
+            <div class="row" style="margin-bottom: 8px; align-items: center;">
+              <span class="tag">股票信息</span>
+              <span class="tag">{{ symbol || "-" }}</span>
+            </div>
+            <div v-if="stockInfo.length" class="info-list">
+              <div v-for="(item, index) in stockInfo" :key="index" class="info-item">
+                <span class="info-key">{{ item.item }}</span>
+                <span class="info-value">{{ formatInfoValue(item) }}</span>
+              </div>
+            </div>
+            <div v-else class="empty-state">
+              暂无数据
+            </div>
+          </div>
+          <div v-else-if="displayMode === 'monitor'">
+            <div class="row" style="margin-bottom: 8px; align-items: center;">
+              <span class="tag">实时监控</span>
+              <span class="tag">{{ monitorList.length }} 只</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>代码</th>
+                    <th>名称</th>
+                    <th>涨幅</th>
+                    <th>连板高度</th>
+                    <th>换手率</th>
+                    <th>量比</th>
+                    <th>首次封板</th>
+                    <th>炸板次数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="monitorList.length === 0">
+                    <td colspan="8" class="empty">暂无数据</td>
+                  </tr>
+                  <tr v-for="item in monitorList" :key="item.code">
+                    <td>{{ item.code || "-" }}</td>
+                    <td>{{ item.name || "-" }}</td>
+                    <td class="highlight">{{ formatChange(item.change) }}</td>
+                    <td>{{ item.height || "-" }}</td>
+                    <td>{{ formatPercent(item.turnover_rate) }}</td>
+                    <td>{{ formatNumber(item.volume_ratio) }}</td>
+                    <td>{{ item.first_seal_time || "-" }}</td>
+                    <td>{{ item.zha_ban ?? "-" }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div v-else-if="displayMode === 'auction'">
+            <div class="row" style="margin-bottom: 8px; align-items: center;">
+              <span class="tag">竞价监控</span>
+              <span class="tag">{{ auctionList.length }} 只</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>代码</th>
+                    <th>名称</th>
+                    <th>竞价涨幅</th>
+                    <th>竞价量比</th>
+                    <th>竞价换手率</th>
+                    <th>竞量占比</th>
+                    <th>竞价开盘价</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="auctionList.length === 0">
+                    <td colspan="7" class="empty">暂无数据</td>
+                  </tr>
+                  <tr v-for="item in auctionList" :key="item.code">
+                    <td>{{ item.code || "-" }}</td>
+                    <td>{{ item.name || "-" }}</td>
+                    <td class="highlight">{{ formatPercent(item.auction_pct) }}</td>
+                    <td>{{ formatNumber(item.auction_volume_ratio) }}</td>
+                    <td>{{ formatPercent(item.auction_turnover) }}</td>
+                    <td>{{ formatPercent(item.auction_volume_share) }}</td>
+                    <td>{{ item.auction_price || "-" }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
+  <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+  <script>
+    new Vue({
+      el: "#app",
+      data() {
+        return {
+          today: dayjs().format("YYYY-MM-DD"),
+          date: dayjs().format("YYYY-MM-DD"),
+          status: "等待本地后端服务。",
+          list: [],
+          currentPage: 1,
+          pageSize: 15,
+          heightSort: "desc",
+          symbol: "",
+          stockInfo: [],
+          infoStatus: "",
+          displayMode: "empty",
+          activeFeature: "auction",
+          monitorList: [],
+          monitoring: false,
+          monitorTimer: null,
+          monitorStatus: "",
+          monitorFilters: {
+            firstBoardOnly: true,
+            sealTimeLimit: "10:00",
+            requireNoZha: false,
+            turnoverMin: 5,
+            turnoverMax: 20,
+            volumeRatioMin: 1.5
+          },
+          auctionList: [],
+          auctionMonitoring: false,
+          auctionTimer: null,
+          auctionAutoTimer: null,
+          auctionStatus: "",
+          auctionFilters: {
+            pctMin: 3,
+            pctMax: 7,
+            volumeRatioMin: 5,
+            turnoverMin: 0.8,
+            volumeShareMin: 8
+          }
+        };
+      },
+      computed: {
+        pagedList() {
+          if (!this.list.length) {
+            return [];
+          }
+          const listCopy = [...this.list];
+          if (this.heightSort !== "none") {
+            const direction = this.heightSort === "asc" ? 1 : -1;
+            listCopy.sort((a, b) => {
+              const aValue = Number(a.height ?? 0);
+              const bValue = Number(b.height ?? 0);
+              if (Number.isNaN(aValue) || Number.isNaN(bValue)) {
+                return 0;
+              }
+              return (aValue - bValue) * direction;
+            });
+          }
+          const startIndex = (this.currentPage - 1) * this.pageSize;
+          return listCopy.slice(startIndex, startIndex + this.pageSize);
+        }
+      },
+      methods: {
+        setFeature(feature) {
+          this.activeFeature = feature;
+          this.displayMode = feature;
+        },
+        formatChange(value) {
+          if (value === null || value === undefined || value === "") {
+            return "-";
+          }
+          const numberValue = Number(value);
+          if (Number.isNaN(numberValue)) {
+            return value;
+          }
+          return numberValue.toFixed(2);
+        },
+        formatTurnover(value) {
+          if (value === null || value === undefined || value === "") {
+            return "-";
+          }
+          const numberValue = Number(value);
+          if (Number.isNaN(numberValue)) {
+            return value;
+          }
+          return `${(numberValue / 1e8).toFixed(2)} 亿`;
+        },
+        formatPercent(value) {
+          if (value === null || value === undefined || value === "") {
+            return "-";
+          }
+          const numberValue = Number(value);
+          if (Number.isNaN(numberValue)) {
+            return value;
+          }
+          return `${numberValue.toFixed(2)}%`;
+        },
+        formatNumber(value) {
+          if (value === null || value === undefined || value === "") {
+            return "-";
+          }
+          const numberValue = Number(value);
+          if (Number.isNaN(numberValue)) {
+            return value;
+          }
+          return numberValue.toFixed(2);
+        },
+        formatInfoValue(item) {
+          const rawValue = item?.value;
+          if (rawValue === null || rawValue === undefined || rawValue === "") {
+            return "-";
+          }
+          const numberValue = Number(String(rawValue).replace(/,/g, ""));
+          if (Number.isNaN(numberValue)) {
+            return rawValue;
+          }
+          const needBillion = ["总股本", "流通股", "总市值", "流通市值"].includes(item?.item);
+          if (!needBillion) {
+            return rawValue;
+          }
+          return `${(numberValue / 1e8).toFixed(2)} 亿`;
+        },
+        handlePageChange(page) {
+          this.currentPage = page;
+        },
+        resetPageForSort() {
+          this.currentPage = 1;
+        },
+        setHeightSort(order) {
+          this.heightSort = order;
+          this.resetPageForSort();
+        },
+        validateDate() {
+          if (!this.date) {
+            return true;
+          }
+          if (dayjs(this.date).isAfter(this.today)) {
+            return false;
+          }
+          return true;
+        },
+        async fetchData() {
+          this.setFeature("limit");
+          if (!this.validateDate()) {
+            return;
+          }
+          const url = new URL("/api/limit-up", window.location.origin);
+          if (this.date) {
+            url.searchParams.set("date", this.date.replaceAll("-", ""));
+          }
+
+          this.status = "加载中...请稍候";
+
+          try {
+            const response = await fetch(url.toString());
+            if (!response.ok) {
+              throw new Error(`接口响应失败: ${response.status}`);
+            }
+            const data = await response.json();
+            this.list = Array.isArray(data?.data) ? data.data : [];
+            this.currentPage = 1;
+            this.status = `已获取 ${this.list.length} 条数据。`;
+            this.displayMode = "limit";
+          } catch (error) {
+            this.status = `请求失败：${error.message}`;
+            this.list = [];
+            this.displayMode = "empty";
+          }
+        },
+        async fetchStockInfo() {
+          this.setFeature("stock");
+          if (!this.symbol) {
+            this.infoStatus = "请输入股票代码。";
+            this.stockInfo = [];
+            this.displayMode = "empty";
+            return;
+          }
+          const url = new URL("/api/stock-info", window.location.origin);
+          url.searchParams.set("symbol", this.symbol);
+          this.infoStatus = "加载中...请稍候";
+
+          try {
+            const response = await fetch(url.toString());
+            if (!response.ok) {
+              throw new Error(`接口响应失败: ${response.status}`);
+            }
+            const data = await response.json();
+            this.stockInfo = Array.isArray(data?.data) ? data.data : [];
+            this.infoStatus = this.stockInfo.length ? "" : "未查询到数据。";
+            this.displayMode = "stock";
+          } catch (error) {
+            this.infoStatus = `请求失败：${error.message}`;
+            this.stockInfo = [];
+            this.displayMode = "empty";
+          }
+        },
+        async fetchMonitorData() {
+          const url = new URL("/api/monitor", window.location.origin);
+          url.searchParams.set("first_board_only", String(this.monitorFilters.firstBoardOnly));
+          url.searchParams.set("seal_time_limit", this.monitorFilters.sealTimeLimit || "10:00");
+          url.searchParams.set("require_no_zha", String(this.monitorFilters.requireNoZha));
+          url.searchParams.set("turnover_min", String(this.monitorFilters.turnoverMin ?? 5));
+          url.searchParams.set("turnover_max", String(this.monitorFilters.turnoverMax ?? 20));
+          url.searchParams.set("volume_ratio_min", String(this.monitorFilters.volumeRatioMin ?? 1.5));
+          this.monitorStatus = "实时监控中...";
+
+          try {
+            const response = await fetch(url.toString());
+            if (!response.ok) {
+              throw new Error(`接口响应失败: ${response.status}`);
+            }
+            const data = await response.json();
+            this.monitorList = Array.isArray(data?.data) ? data.data : [];
+            this.monitorStatus = `已匹配 ${this.monitorList.length} 只股票。`;
+          } catch (error) {
+            this.monitorStatus = `请求失败：${error.message}`;
+            this.monitorList = [];
+          }
+        },
+        startMonitor() {
+          if (this.monitoring) {
+            return;
+          }
+          this.monitoring = true;
+          this.fetchMonitorData();
+          this.monitorTimer = setInterval(() => {
+            this.fetchMonitorData();
+          }, 5000);
+        },
+        stopMonitor() {
+          this.monitoring = false;
+          if (this.monitorTimer) {
+            clearInterval(this.monitorTimer);
+            this.monitorTimer = null;
+          }
+          this.monitorStatus = "已停止监控。";
+        },
+        async fetchAuctionData() {
+          const url = new URL("/api/auction-monitor", window.location.origin);
+          url.searchParams.set("pct_min", String(this.auctionFilters.pctMin));
+          url.searchParams.set("pct_max", String(this.auctionFilters.pctMax));
+          url.searchParams.set("volume_ratio_min", String(this.auctionFilters.volumeRatioMin));
+          url.searchParams.set("turnover_min", String(this.auctionFilters.turnoverMin));
+          url.searchParams.set("volume_share_min", String(this.auctionFilters.volumeShareMin));
+          this.auctionStatus = "竞价监控中...";
+
+          try {
+            const response = await fetch(url.toString());
+            if (!response.ok) {
+              throw new Error(`接口响应失败: ${response.status}`);
+            }
+            const data = await response.json();
+            if (data?.error) {
+              throw new Error(data.error);
+            }
+            this.auctionList = Array.isArray(data?.data) ? data.data : [];
+            this.auctionStatus = `已匹配 ${this.auctionList.length} 只股票。`;
+          } catch (error) {
+            this.auctionStatus = `请求失败：${error.message}`;
+            this.auctionList = [];
+          }
+        },
+        startAuctionMonitor() {
+          if (this.auctionMonitoring) {
+            return;
+          }
+          this.auctionMonitoring = true;
+          this.fetchAuctionData();
+          this.auctionTimer = setInterval(() => {
+            this.fetchAuctionData();
+          }, 5000);
+        },
+        stopAuctionMonitor() {
+          this.auctionMonitoring = false;
+          if (this.auctionTimer) {
+            clearInterval(this.auctionTimer);
+            this.auctionTimer = null;
+          }
+          this.auctionStatus = "已停止竞价监控。";
+        },
+        syncAuctionAuto() {
+          const now = new Date();
+          const start = new Date();
+          start.setHours(9, 15, 0, 0);
+          const end = new Date();
+          end.setHours(9, 25, 0, 0);
+
+          if (now >= start && now <= end) {
+            if (!this.auctionMonitoring) {
+              this.startAuctionMonitor();
+            }
+          } else if (this.auctionMonitoring) {
+            this.stopAuctionMonitor();
+          }
+        }
+      },
+      mounted() {
+        this.syncAuctionAuto();
+        this.auctionAutoTimer = setInterval(() => {
+          this.syncAuctionAuto();
+        }, 5000);
+      },
+      beforeDestroy() {
+        if (this.auctionAutoTimer) {
+          clearInterval(this.auctionAutoTimer);
+          this.auctionAutoTimer = null;
+        }
+      }
+    });
+  </script>
+</body>
+<style>
+    :root {
+      color-scheme: light;
+      --bg: #f3f6ff;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --accent: #1d4ed8;
+      --accent-weak: rgba(29, 78, 216, 0.12);
+      --border: #dbe3f0;
+      --success: #dc2626;
+      --nav-bg: #0b1f4b;
+      --nav-text: #e2e8f0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .top-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 20px;
+      background: var(--nav-bg);
+      color: var(--nav-text);
+      box-shadow: 0 10px 18px rgba(15, 23, 42, 0.18);
+    }
+
+    .feature-tabs {
+      display: flex;
+      gap: 10px;
+      padding: 20px 20px 0;
+    }
+
+    .tab {
+      width: auto;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: #e0e7ff;
+      color: #1d4ed8;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      box-shadow: none;
+    }
+
+    .tab.active {
+      background: #1d4ed8;
+      color: #fff;
+    }
+
+    .top-nav h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: #cbd5f5;
+      font-size: 11px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-mark {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: rgba(239, 68, 68, 0.18);
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 18px;
+      color: #fecaca;
+      border: 1px solid rgba(248, 113, 113, 0.5);
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    main {
+      padding: 18px 20px 28px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+      border: 1px solid var(--border);
+      display: grid;
+      gap: 8px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+
+    .primary-btn {
+      margin-top: 4px;
+    }
+
+    .display-card {
+      min-height: 520px;
+      border-radius: 22px;
+      box-shadow: 0 18px 36px rgba(15, 23, 42, 0.12);
+    }
+
+    .display-card .tag {
+      background: rgba(15, 23, 42, 0.08);
+      color: #1e293b;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .column {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid {
+      grid-template-columns: 1fr;
+      align-items: start;
+    }
+
+    @media (min-width: 960px) {
+      .grid {
+        grid-template-columns: 1fr 3fr;
+      }
+
+      .right-panel {
+        margin-top: 0;
+      }
+    }
+
+    .left-panel {
+      max-width: 420px;
+    }
+
+    .right-panel {
+      flex: 1;
+      margin-top: 0;
+    }
+
+    label {
+      font-size: 12px;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    input, select, button, textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-family: inherit;
+      background: #fff;
+    }
+
+    .left-panel input,
+    .left-panel select {
+      background: #f8faff;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    button {
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: white;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .el-pagination button,
+    .el-pagination .el-pager li {
+      width: auto;
+    }
+
+    .inline-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .range-sep {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .ghost-btn {
+      width: auto;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: rgba(15, 23, 42, 0.12);
+      color: #e2e8f0;
+      font-size: 12px;
+      box-shadow: none;
+    }
+
+    .left-panel .ghost-btn {
+      background: #fff;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .ghost-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    input[type="checkbox"] {
+      width: auto;
+      margin-top: 6px;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+    }
+
+    .row {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+
+    .dense-row {
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+
+    .field-full {
+      grid-column: 1 / -1;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      background: rgba(59, 130, 246, 0.12);
+      color: #1d4ed8;
+      font-weight: 600;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 16px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    th {
+      color: #475569;
+      font-weight: 600;
+      background: #f1f5ff;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .status {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+
+    .left-panel .status {
+      color: #64748b;
+    }
+
+    .highlight {
+      color: var(--success);
+      font-weight: 700;
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 24px 0;
+    }
+
+    .note {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .pagination-wrapper {
+      margin-top: 12px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .el-pagination {
+      padding: 0;
+    }
+
+    .el-pagination.is-background .el-pager li:not(.disabled).active {
+      background-color: #2563eb;
+    }
+
+    .el-pagination.is-background .btn-prev,
+    .el-pagination.is-background .btn-next {
+      min-width: 32px;
+      padding: 0 8px;
+    }
+
+    .sortable-header {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sort-buttons {
+      display: inline-flex;
+      flex-direction: column;
+      line-height: 1;
+      gap: 2px;
+    }
+
+    .sort-btn {
+      border: none;
+      background: transparent;
+      padding: 0;
+      font-size: 10px;
+      line-height: 1;
+      cursor: pointer;
+      color: var(--muted);
+    }
+
+    .sort-btn.active {
+      color: var(--accent);
+    }
+
+    .info-list {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .info-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      font-size: 13px;
+    }
+
+    .info-key {
+      color: var(--muted);
+    }
+
+    .info-value {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 32px 0;
+      font-size: 14px;
+    }
+  </style>
+</html>
